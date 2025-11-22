@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TreeD Visual Tests</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0d1117;
+      color: #c9d1d9;
+      padding: 20px;
+    }
+    h1 {
+      color: #58a6ff;
+      margin-bottom: 20px;
+    }
+    .test-suite {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+      gap: 20px;
+    }
+    .test-case {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .test-header {
+      padding: 12px 16px;
+      background: #21262d;
+      border-bottom: 1px solid #30363d;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .test-name {
+      font-weight: 600;
+    }
+    .test-status {
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.8em;
+      font-weight: 600;
+    }
+    .test-status.running {
+      background: #1f6feb;
+      color: #fff;
+    }
+    .test-status.passed {
+      background: #238636;
+      color: #fff;
+    }
+    .test-status.failed {
+      background: #da3633;
+      color: #fff;
+    }
+    .test-canvas-container {
+      height: 300px;
+      position: relative;
+    }
+    .test-canvas {
+      width: 100%;
+      height: 100%;
+    }
+    .test-info {
+      padding: 12px 16px;
+      font-size: 0.85em;
+      color: #8b949e;
+    }
+    .controls {
+      margin-bottom: 20px;
+      display: flex;
+      gap: 10px;
+    }
+    .btn {
+      padding: 8px 16px;
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #c9d1d9;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn:hover {
+      background: #30363d;
+    }
+    .btn.primary {
+      background: #238636;
+      border-color: #238636;
+    }
+    .btn.primary:hover {
+      background: #2ea043;
+    }
+    .summary {
+      margin-top: 20px;
+      padding: 16px;
+      background: #161b22;
+      border-radius: 8px;
+    }
+    #log {
+      font-family: monospace;
+      font-size: 0.85em;
+      white-space: pre-wrap;
+      max-height: 200px;
+      overflow-y: auto;
+      margin-top: 10px;
+      padding: 10px;
+      background: #0d1117;
+      border-radius: 4px;
+    }
+    .log-entry { margin: 2px 0; }
+    .log-entry.success { color: #3fb950; }
+    .log-entry.error { color: #f85149; }
+    .log-entry.info { color: #58a6ff; }
+  </style>
+</head>
+<body>
+  <h1>TreeD Visual Test Suite</h1>
+
+  <div class="controls">
+    <button class="btn primary" id="runAllBtn">Run All Tests</button>
+    <button class="btn" id="captureBtn">Capture Screenshots</button>
+    <button class="btn" id="clearBtn">Clear Results</button>
+  </div>
+
+  <div class="test-suite" id="testSuite">
+    <!-- Test cases will be dynamically created -->
+  </div>
+
+  <div class="summary">
+    <strong>Test Log</strong>
+    <div id="log"></div>
+  </div>
+
+  <script type="module">
+    import { Vec3 } from './src/math/vec3.ts';
+    import { TreeGenerator } from './src/tree/generator.ts';
+    import { TreeMeshBuilder } from './src/tree/mesh-builder.ts';
+    import { DEFAULT_TREE_PARAMS } from './src/tree/types.ts';
+
+    const testSuite = document.getElementById('testSuite');
+    const logEl = document.getElementById('log');
+
+    function log(message, type = 'info') {
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      logEl.appendChild(entry);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    // Test case definitions
+    const testCases = [
+      {
+        name: 'Basic Tree Render',
+        description: 'Renders a simple tree with default parameters',
+        params: { maxDepth: 4 },
+        growthProgress: 1,
+      },
+      {
+        name: 'Sapling (25% Growth)',
+        description: 'Tree at early growth stage',
+        params: { maxDepth: 5 },
+        growthProgress: 0.25,
+      },
+      {
+        name: 'Medium Growth (50%)',
+        description: 'Tree at half growth',
+        params: { maxDepth: 5 },
+        growthProgress: 0.5,
+      },
+      {
+        name: 'Dense Tree (High Depth)',
+        description: 'Tree with many branches',
+        params: { maxDepth: 7 },
+        growthProgress: 1,
+      },
+      {
+        name: 'Wide Angle Branches',
+        description: 'Tree with wide branch angles',
+        params: { maxDepth: 4, branchAngle: Math.PI / 3 },
+        growthProgress: 1,
+      },
+      {
+        name: 'Tight Angle Branches',
+        description: 'Tree with narrow branch angles',
+        params: { maxDepth: 5, branchAngle: Math.PI / 8 },
+        growthProgress: 1,
+      },
+    ];
+
+    // Simple WebGL renderer for tests
+    class SimpleRenderer {
+      constructor(canvas) {
+        this.canvas = canvas;
+        this.gl = canvas.getContext('webgl2');
+        if (!this.gl) {
+          throw new Error('WebGL2 not supported');
+        }
+        this.initShader();
+      }
+
+      initShader() {
+        const gl = this.gl;
+
+        const vs = `#version 300 es
+          in vec3 aPosition;
+          in vec3 aNormal;
+          in vec4 aColor;
+          uniform mat4 uMVP;
+          out vec3 vNormal;
+          out vec4 vColor;
+          void main() {
+            vNormal = aNormal;
+            vColor = aColor;
+            gl_Position = uMVP * vec4(aPosition, 1.0);
+          }
+        `;
+
+        const fs = `#version 300 es
+          precision highp float;
+          in vec3 vNormal;
+          in vec4 vColor;
+          out vec4 fragColor;
+          void main() {
+            vec3 light = normalize(vec3(0.5, 1.0, 0.5));
+            float diff = max(dot(normalize(vNormal), light), 0.2);
+            vec3 color = vColor.rgb * diff;
+            // Add glow effect
+            color += vec3(0.1, 0.3, 0.2) * (1.0 - diff);
+            fragColor = vec4(color, 1.0);
+          }
+        `;
+
+        const vertShader = gl.createShader(gl.VERTEX_SHADER);
+        gl.shaderSource(vertShader, vs);
+        gl.compileShader(vertShader);
+
+        const fragShader = gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(fragShader, fs);
+        gl.compileShader(fragShader);
+
+        this.program = gl.createProgram();
+        gl.attachShader(this.program, vertShader);
+        gl.attachShader(this.program, fragShader);
+        gl.linkProgram(this.program);
+
+        this.mvpLoc = gl.getUniformLocation(this.program, 'uMVP');
+      }
+
+      render(meshData, mvp) {
+        const gl = this.gl;
+
+        gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        gl.clearColor(0.02, 0.03, 0.05, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        gl.enable(gl.DEPTH_TEST);
+
+        gl.useProgram(this.program);
+        gl.uniformMatrix4fv(this.mvpLoc, false, mvp);
+
+        // Create VAO
+        const vao = gl.createVertexArray();
+        gl.bindVertexArray(vao);
+
+        // Position buffer
+        const posBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, meshData.positions, gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+
+        // Normal buffer
+        if (meshData.normals) {
+          const normBuffer = gl.createBuffer();
+          gl.bindBuffer(gl.ARRAY_BUFFER, normBuffer);
+          gl.bufferData(gl.ARRAY_BUFFER, meshData.normals, gl.STATIC_DRAW);
+          gl.enableVertexAttribArray(1);
+          gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+        }
+
+        // Color buffer
+        if (meshData.colors) {
+          const colorBuffer = gl.createBuffer();
+          gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+          gl.bufferData(gl.ARRAY_BUFFER, meshData.colors, gl.STATIC_DRAW);
+          gl.enableVertexAttribArray(2);
+          gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 0, 0);
+        }
+
+        // Index buffer
+        if (meshData.indices) {
+          const idxBuffer = gl.createBuffer();
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuffer);
+          gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, meshData.indices, gl.STATIC_DRAW);
+          gl.drawElements(gl.TRIANGLES, meshData.indices.length, gl.UNSIGNED_SHORT, 0);
+        } else {
+          gl.drawArrays(gl.TRIANGLES, 0, meshData.positions.length / 3);
+        }
+
+        gl.bindVertexArray(null);
+      }
+    }
+
+    // Create simple MVP matrix
+    function createMVP(aspect) {
+      // Simple perspective * view matrix
+      const fov = Math.PI / 4;
+      const near = 0.1, far = 100;
+      const f = 1 / Math.tan(fov / 2);
+
+      // Camera at (8, 6, 8) looking at (0, 3, 0)
+      const eye = [8, 6, 8];
+      const target = [0, 3, 0];
+      const up = [0, 1, 0];
+
+      // View matrix (simplified lookAt)
+      const zAxis = normalize(subtract(eye, target));
+      const xAxis = normalize(cross(up, zAxis));
+      const yAxis = cross(zAxis, xAxis);
+
+      const view = [
+        xAxis[0], yAxis[0], zAxis[0], 0,
+        xAxis[1], yAxis[1], zAxis[1], 0,
+        xAxis[2], yAxis[2], zAxis[2], 0,
+        -dot(xAxis, eye), -dot(yAxis, eye), -dot(zAxis, eye), 1
+      ];
+
+      // Projection matrix
+      const proj = [
+        f/aspect, 0, 0, 0,
+        0, f, 0, 0,
+        0, 0, (far+near)/(near-far), -1,
+        0, 0, 2*far*near/(near-far), 0
+      ];
+
+      return multiplyMatrices(proj, view);
+    }
+
+    function subtract(a, b) { return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]; }
+    function cross(a, b) { return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
+    function dot(a, b) { return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]; }
+    function normalize(v) { const l = Math.sqrt(dot(v,v)); return [v[0]/l, v[1]/l, v[2]/l]; }
+    function multiplyMatrices(a, b) {
+      const result = new Float32Array(16);
+      for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < 4; j++) {
+          result[j*4+i] = a[i]*b[j*4] + a[i+4]*b[j*4+1] + a[i+8]*b[j*4+2] + a[i+12]*b[j*4+3];
+        }
+      }
+      return result;
+    }
+
+    // Create test case UI
+    function createTestCase(test, index) {
+      const div = document.createElement('div');
+      div.className = 'test-case';
+      div.id = `test-${index}`;
+      div.innerHTML = `
+        <div class="test-header">
+          <span class="test-name">${test.name}</span>
+          <span class="test-status" id="status-${index}">pending</span>
+        </div>
+        <div class="test-canvas-container">
+          <canvas class="test-canvas" id="canvas-${index}" width="400" height="300"></canvas>
+        </div>
+        <div class="test-info">${test.description}</div>
+      `;
+      testSuite.appendChild(div);
+    }
+
+    // Run a single test
+    async function runTest(test, index) {
+      const statusEl = document.getElementById(`status-${index}`);
+      const canvas = document.getElementById(`canvas-${index}`);
+
+      statusEl.textContent = 'running';
+      statusEl.className = 'test-status running';
+      log(`Running test: ${test.name}`, 'info');
+
+      try {
+        const renderer = new SimpleRenderer(canvas);
+        const params = { ...DEFAULT_TREE_PARAMS, ...test.params };
+        const generator = new TreeGenerator(params);
+        const tree = generator.generate();
+
+        // We need to build mesh data manually for tests
+        // Using a simplified inline mesh builder
+        const meshData = buildTreeMeshData(tree, params.segments, test.growthProgress);
+
+        const mvp = createMVP(canvas.width / canvas.height);
+        renderer.render(meshData, mvp);
+
+        // Verify something was rendered
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const imageData = ctx?.getImageData(0, 0, canvas.width, canvas.height);
+        let hasContent = false;
+        if (imageData) {
+          for (let i = 0; i < imageData.data.length; i += 4) {
+            if (imageData.data[i] > 10 || imageData.data[i+1] > 10 || imageData.data[i+2] > 10) {
+              hasContent = true;
+              break;
+            }
+          }
+        }
+
+        if (hasContent) {
+          statusEl.textContent = 'passed';
+          statusEl.className = 'test-status passed';
+          log(`Test passed: ${test.name}`, 'success');
+          return true;
+        } else {
+          throw new Error('Canvas appears empty');
+        }
+      } catch (err) {
+        statusEl.textContent = 'failed';
+        statusEl.className = 'test-status failed';
+        log(`Test failed: ${test.name} - ${err.message}`, 'error');
+        return false;
+      }
+    }
+
+    // Simplified mesh builder for tests
+    function buildTreeMeshData(root, segments, growthProgress) {
+      const positions = [];
+      const normals = [];
+      const colors = [];
+      const indices = [];
+      let vertexOffset = 0;
+
+      function getMaxDepth(node) {
+        if (node.children.length === 0) return node.depth;
+        return Math.max(...node.children.map(getMaxDepth));
+      }
+
+      const totalDepth = getMaxDepth(root);
+
+      function buildBranch(node) {
+        const normalizedDepth = node.depth / Math.max(totalDepth, 1);
+        if (normalizedDepth > growthProgress) return;
+
+        const localGrowth = Math.min(1, (growthProgress - normalizedDepth) * (totalDepth + 1));
+        if (localGrowth <= 0) return;
+
+        const dir = node.direction;
+        const startRadius = node.startRadius;
+        const endRadius = node.endRadius * localGrowth;
+        const length = node.length * localGrowth;
+
+        // Find perpendicular vectors
+        let tangent = cross([dir.x, dir.y, dir.z], [0, 1, 0]);
+        if (dot(tangent, tangent) < 0.001) {
+          tangent = cross([dir.x, dir.y, dir.z], [1, 0, 0]);
+        }
+        tangent = normalize(tangent);
+        const bitangent = normalize(cross([dir.x, dir.y, dir.z], tangent));
+
+        const baseIndex = vertexOffset;
+        const depthFactor = node.depth / 6;
+        const baseColor = [0.3 + depthFactor * 0.2, 0.2 + depthFactor * 0.3, 0.15 + depthFactor * 0.1, 1];
+        const tipColor = [0.1 + depthFactor * 0.3, 0.4 + depthFactor * 0.5, 0.3 + depthFactor * 0.4, 1];
+
+        // Bottom ring
+        for (let i = 0; i <= segments; i++) {
+          const theta = (i / segments) * Math.PI * 2;
+          const cos = Math.cos(theta);
+          const sin = Math.sin(theta);
+
+          const nx = tangent[0] * cos + bitangent[0] * sin;
+          const ny = tangent[1] * cos + bitangent[1] * sin;
+          const nz = tangent[2] * cos + bitangent[2] * sin;
+
+          positions.push(
+            node.startPosition.x + nx * startRadius,
+            node.startPosition.y + ny * startRadius,
+            node.startPosition.z + nz * startRadius
+          );
+          normals.push(nx, ny, nz);
+          colors.push(...baseColor);
+        }
+
+        // Top ring
+        const endPos = {
+          x: node.startPosition.x + dir.x * length,
+          y: node.startPosition.y + dir.y * length,
+          z: node.startPosition.z + dir.z * length
+        };
+
+        for (let i = 0; i <= segments; i++) {
+          const theta = (i / segments) * Math.PI * 2;
+          const cos = Math.cos(theta);
+          const sin = Math.sin(theta);
+
+          const nx = tangent[0] * cos + bitangent[0] * sin;
+          const ny = tangent[1] * cos + bitangent[1] * sin;
+          const nz = tangent[2] * cos + bitangent[2] * sin;
+
+          positions.push(
+            endPos.x + nx * endRadius,
+            endPos.y + ny * endRadius,
+            endPos.z + nz * endRadius
+          );
+          normals.push(nx, ny, nz);
+          colors.push(
+            baseColor[0] * (1 - localGrowth) + tipColor[0] * localGrowth,
+            baseColor[1] * (1 - localGrowth) + tipColor[1] * localGrowth,
+            baseColor[2] * (1 - localGrowth) + tipColor[2] * localGrowth,
+            1
+          );
+        }
+
+        // Indices
+        for (let i = 0; i < segments; i++) {
+          const i0 = baseIndex + i;
+          const i1 = baseIndex + i + 1;
+          const i2 = baseIndex + segments + 1 + i;
+          const i3 = baseIndex + segments + 1 + i + 1;
+          indices.push(i0, i2, i1, i1, i2, i3);
+        }
+
+        vertexOffset += (segments + 1) * 2;
+
+        for (const child of node.children) {
+          buildBranch(child);
+        }
+      }
+
+      buildBranch(root);
+
+      return {
+        positions: new Float32Array(positions),
+        normals: new Float32Array(normals),
+        colors: new Float32Array(colors),
+        indices: new Uint16Array(indices)
+      };
+    }
+
+    // Initialize
+    testCases.forEach((test, i) => createTestCase(test, i));
+    log('Test suite initialized', 'info');
+
+    // Run all tests
+    document.getElementById('runAllBtn').addEventListener('click', async () => {
+      log('Running all tests...', 'info');
+      let passed = 0;
+      for (let i = 0; i < testCases.length; i++) {
+        if (await runTest(testCases[i], i)) passed++;
+        await new Promise(r => setTimeout(r, 100)); // Brief pause between tests
+      }
+      log(`Completed: ${passed}/${testCases.length} tests passed`, passed === testCases.length ? 'success' : 'error');
+    });
+
+    // Capture screenshots
+    document.getElementById('captureBtn').addEventListener('click', () => {
+      testCases.forEach((_, i) => {
+        const canvas = document.getElementById(`canvas-${i}`);
+        const link = document.createElement('a');
+        link.download = `test-${i}-${testCases[i].name.replace(/\s+/g, '-')}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      });
+      log('Screenshots captured', 'success');
+    });
+
+    // Clear results
+    document.getElementById('clearBtn').addEventListener('click', () => {
+      testCases.forEach((_, i) => {
+        const canvas = document.getElementById(`canvas-${i}`);
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const statusEl = document.getElementById(`status-${i}`);
+        statusEl.textContent = 'pending';
+        statusEl.className = 'test-status';
+      });
+      logEl.innerHTML = '';
+      log('Results cleared', 'info');
+    });
+  </script>
+</body>
+</html>

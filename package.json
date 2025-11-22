@@ -1,0 +1,30 @@
+{
+  "name": "treed",
+  "version": "1.0.0",
+  "description": "3D Family Tree Growth Engine with bioluminescent visualization",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "typecheck": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://local_proxy@127.0.0.1:36349/git/aerugo/treeD"
+  },
+  "keywords": ["3d", "webgl", "tree", "visualization", "family-tree"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@vitest/ui": "^4.0.13",
+    "happy-dom": "^20.0.10",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.4",
+    "vitest": "^4.0.13"
+  }
+}

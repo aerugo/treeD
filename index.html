@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TreeD - 3D Family Tree Visualization</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0a0a0f;
+      color: #e0e0e0;
+      overflow: hidden;
+    }
+
+    #app {
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+    }
+
+    #canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* UI Overlay */
+    .ui-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      pointer-events: none;
+    }
+
+    .ui-panel {
+      pointer-events: auto;
+      background: rgba(10, 15, 20, 0.85);
+      border: 1px solid rgba(100, 200, 150, 0.3);
+      border-radius: 12px;
+      padding: 20px;
+      backdrop-filter: blur(10px);
+    }
+
+    /* Title */
+    .title-panel {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+    }
+
+    .title-panel h1 {
+      font-size: 2rem;
+      font-weight: 300;
+      color: #80ffb0;
+      text-shadow: 0 0 20px rgba(100, 255, 150, 0.5);
+      letter-spacing: 0.1em;
+    }
+
+    .title-panel p {
+      font-size: 0.9rem;
+      color: #6a9a80;
+      margin-top: 5px;
+    }
+
+    /* Controls Panel */
+    .controls-panel {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      width: 280px;
+    }
+
+    .control-group {
+      margin-bottom: 15px;
+    }
+
+    .control-group label {
+      display: block;
+      font-size: 0.85rem;
+      color: #80c0a0;
+      margin-bottom: 5px;
+    }
+
+    .control-group input[type="range"] {
+      width: 100%;
+      height: 6px;
+      -webkit-appearance: none;
+      background: rgba(100, 200, 150, 0.2);
+      border-radius: 3px;
+      outline: none;
+    }
+
+    .control-group input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      background: #60d090;
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow: 0 0 10px rgba(100, 200, 150, 0.5);
+    }
+
+    .control-group .value {
+      font-size: 0.8rem;
+      color: #60d090;
+      text-align: right;
+      margin-top: 3px;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 10px 15px;
+      background: rgba(100, 200, 150, 0.2);
+      border: 1px solid rgba(100, 200, 150, 0.4);
+      border-radius: 6px;
+      color: #80ffb0;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn:hover {
+      background: rgba(100, 200, 150, 0.3);
+      box-shadow: 0 0 15px rgba(100, 200, 150, 0.3);
+    }
+
+    /* Info Panel */
+    .info-panel {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      font-size: 0.8rem;
+    }
+
+    .info-panel p {
+      color: #5a8a70;
+      margin: 3px 0;
+    }
+
+    .info-panel .highlight {
+      color: #80c0a0;
+    }
+
+    /* Loading overlay */
+    .loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+    }
+
+    .loading-spinner {
+      width: 50px;
+      height: 50px;
+      border: 3px solid rgba(100, 200, 150, 0.2);
+      border-top-color: #60d090;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 15px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .loading-text {
+      color: #80c0a0;
+      font-size: 1rem;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <canvas id="canvas"></canvas>
+
+    <div class="ui-overlay">
+      <!-- Title -->
+      <div class="ui-panel title-panel">
+        <h1>TreeD</h1>
+        <p>3D Family Tree Visualization</p>
+      </div>
+
+      <!-- Controls -->
+      <div class="ui-panel controls-panel">
+        <div class="control-group">
+          <label>Growth Progress</label>
+          <input type="range" id="growthSlider" min="0" max="100" value="100">
+          <div class="value" id="growthValue">100%</div>
+        </div>
+
+        <div class="control-group">
+          <label>Branch Angle</label>
+          <input type="range" id="angleSlider" min="10" max="60" value="36">
+          <div class="value" id="angleValue">36°</div>
+        </div>
+
+        <div class="control-group">
+          <label>Branch Decay</label>
+          <input type="range" id="decaySlider" min="50" max="90" value="70">
+          <div class="value" id="decayValue">70%</div>
+        </div>
+
+        <div class="control-group">
+          <label>Tree Depth</label>
+          <input type="range" id="depthSlider" min="2" max="8" value="6">
+          <div class="value" id="depthValue">6</div>
+        </div>
+
+        <div class="button-group">
+          <button class="btn" id="resetBtn">Reset</button>
+          <button class="btn" id="regrowBtn">Regrow</button>
+        </div>
+      </div>
+
+      <!-- Info -->
+      <div class="ui-panel info-panel">
+        <p>Drag to rotate <span class="highlight">|</span> Scroll to zoom</p>
+        <p>Family members: <span class="highlight" id="memberCount">15</span></p>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div class="loading" id="loading">
+      <div class="loading-spinner"></div>
+      <div class="loading-text">Initializing TreeD Engine...</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initTreeD } from './src/main.ts';
+
+    // Wait for DOM
+    document.addEventListener('DOMContentLoaded', () => {
+      const canvas = document.getElementById('canvas');
+      const loading = document.getElementById('loading');
+
+      // Initialize the app
+      const app = initTreeD(canvas);
+
+      // Hide loading after a brief delay
+      setTimeout(() => {
+        loading.classList.add('hidden');
+      }, 500);
+
+      // Wire up controls
+      const growthSlider = document.getElementById('growthSlider');
+      const growthValue = document.getElementById('growthValue');
+      const angleSlider = document.getElementById('angleSlider');
+      const angleValue = document.getElementById('angleValue');
+      const decaySlider = document.getElementById('decaySlider');
+      const decayValue = document.getElementById('decayValue');
+      const depthSlider = document.getElementById('depthSlider');
+      const depthValue = document.getElementById('depthValue');
+      const resetBtn = document.getElementById('resetBtn');
+      const regrowBtn = document.getElementById('regrowBtn');
+
+      growthSlider.addEventListener('input', (e) => {
+        const value = parseInt(e.target.value);
+        growthValue.textContent = `${value}%`;
+        app.setGrowthProgress(value / 100);
+      });
+
+      angleSlider.addEventListener('input', (e) => {
+        const value = parseInt(e.target.value);
+        angleValue.textContent = `${value}°`;
+        app.setTreeParams({ branchAngle: (value * Math.PI) / 180 });
+      });
+
+      decaySlider.addEventListener('input', (e) => {
+        const value = parseInt(e.target.value);
+        decayValue.textContent = `${value}%`;
+        app.setTreeParams({ branchLengthDecay: value / 100 });
+      });
+
+      depthSlider.addEventListener('input', (e) => {
+        const value = parseInt(e.target.value);
+        depthValue.textContent = value;
+        app.setTreeParams({ maxDepth: value });
+      });
+
+      resetBtn.addEventListener('click', () => {
+        app.resetGrowth();
+        growthSlider.value = 0;
+        growthValue.textContent = '0%';
+      });
+
+      regrowBtn.addEventListener('click', () => {
+        app.resetGrowth();
+        growthSlider.value = 100;
+        growthValue.textContent = '100%';
+        setTimeout(() => {
+          app.growTo(1);
+        }, 100);
+      });
+
+      // Update member count
+      const memberCount = document.getElementById('memberCount');
+      memberCount.textContent = app.getFamilyTree().getAllPeople().length;
+    });
+  </script>
+</body>
+</html>
