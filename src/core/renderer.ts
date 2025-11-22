@@ -107,8 +107,7 @@ export class Renderer {
       uniform float uEmissiveIntensity;
       uniform float uTime;
 
-      layout(location = 0) out vec4 fragColor;
-      layout(location = 1) out vec4 brightColor;
+      out vec4 fragColor;
 
       void main() {
         vec3 normal = normalize(vNormal);
@@ -117,13 +116,13 @@ export class Renderer {
         // Simple ambient + diffuse lighting
         vec3 lightDir = normalize(vec3(0.5, 1.0, 0.3));
         float diff = max(dot(normal, lightDir), 0.0);
-        vec3 ambient = vec3(0.15);
-        vec3 diffuse = diff * vec3(0.6);
+        vec3 ambient = vec3(0.2);
+        vec3 diffuse = diff * vec3(0.7);
 
         // Rim lighting for ethereal effect
         float rim = 1.0 - max(dot(viewDir, normal), 0.0);
-        rim = pow(rim, 3.0);
-        vec3 rimColor = rim * uEmissive * 0.5;
+        rim = pow(rim, 2.5);
+        vec3 rimColor = rim * uEmissive * 0.6;
 
         // Pulsing glow
         float pulse = 0.8 + 0.2 * sin(uTime * 2.0 + vWorldPos.y * 0.5);
@@ -131,15 +130,12 @@ export class Renderer {
 
         vec3 finalColor = uColor * (ambient + diffuse) + emissiveGlow + rimColor;
 
-        fragColor = vec4(finalColor, 1.0);
+        // Simple tone mapping
+        finalColor = finalColor / (finalColor + vec3(1.0));
+        // Gamma correction
+        finalColor = pow(finalColor, vec3(1.0 / 2.2));
 
-        // Extract bright areas for bloom
-        float brightness = dot(finalColor, vec3(0.2126, 0.7152, 0.0722));
-        if (brightness > 0.5) {
-          brightColor = vec4(finalColor * (brightness - 0.5), 1.0);
-        } else {
-          brightColor = vec4(0.0, 0.0, 0.0, 1.0);
-        }
+        fragColor = vec4(finalColor, 1.0);
       }
     `;
 
@@ -326,8 +322,8 @@ export class Renderer {
   render(camera: Camera, objects: RenderObject[], time: number): void {
     const gl = this.gl;
 
-    // Pass 1: Render scene to FBO
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.sceneFBO);
+    // Direct render to screen (simplified for compatibility)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, this.width, this.height);
     this.clear();
 
@@ -353,45 +349,6 @@ export class Renderer {
 
       obj.mesh.draw();
     }
-
-    // Pass 2: Blur bright areas for bloom
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.bloomFBO);
-    gl.viewport(0, 0, this.width / 2, this.height / 2);
-
-    this.bloomShader.use();
-    this.bloomShader.setUniform2f('uResolution', this.width / 2, this.height / 2);
-
-    // Horizontal blur
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.brightTexture);
-    this.bloomShader.setUniform1i('uTexture', 0);
-    this.bloomShader.setUniform2f('uDirection', 1, 0);
-
-    gl.bindVertexArray(this.quadVAO);
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-    // Vertical blur (ping-pong would be better, but this is simpler)
-    this.bloomShader.setUniform2f('uDirection', 0, 1);
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-    // Pass 3: Composite
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, this.width, this.height);
-    this.clear();
-
-    this.postProcessShader.use();
-
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.sceneTexture);
-    this.postProcessShader.setUniform1i('uScene', 0);
-
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, this.bloomTexture);
-    this.postProcessShader.setUniform1i('uBloom', 1);
-    this.postProcessShader.setUniform1f('uBloomIntensity', 1.5);
-
-    gl.bindVertexArray(this.quadVAO);
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
 
   getGL(): WebGL2RenderingContext {
